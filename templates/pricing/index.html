@@ -1,0 +1,253 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Barrier Options Lab</title>
+  <link rel="icon" type="image/png" href="{% static 'pricing/favicon.png' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'pricing/app.css' %}?v=20260731-10">
+  <script src="{% static 'pricing/vendor/chart.umd.min.js' %}?v=4.4.9" defer></script>
+  <script src="{% static 'pricing/app.js' %}?v=20260731-10" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">LOCAL QUANTITATIVE STUDY TOOL</p>
+      <h1>Barrier Options <span>Lab</span></h1>
+      <p class="subtitle">Price the path. Decompose the package. Challenge the zero-cost story.</p>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Workspaces">
+    <button class="active" data-tab="barrier">Single barrier</button>
+    <button data-tab="collar">Collar U&amp;I</button>
+    <button data-tab="fence">Fence U&amp;I</button>
+    <button data-tab="nitro">Nitro C U&amp;O</button>
+    <button data-tab="double_up_ko">Double Up KO</button>
+    <button data-tab="retail">Retail flex packages</button>
+    <button data-tab="solver">Zero-cost solver</button>
+    <button data-tab="scenario">Scenarios</button>
+    <button data-tab="learning">Dealer &amp; risk lab</button>
+    <button data-tab="history">History</button>
+    <button data-tab="methodology">Methodology</button>
+  </nav>
+
+  <main>
+    <section class="market-strip">
+      <div>
+        <label for="underlying">B3 underlying</label>
+        <input id="underlying" value="PETR4 BZ Equity">
+      </div>
+      <button type="button" id="load-market" class="secondary">Load latest price</button>
+      <div class="market-state" id="market-state"><span>Manual assumptions</span><small>Yahoo updates spot only</small></div>
+    </section>
+
+    <section class="workspace active" id="barrier">
+      <div class="workspace-heading"><div><p class="kicker">PATH-DEPENDENT CONTRACT</p><h2>Single barrier option</h2></div><p>Continuous monitoring uses Brownian-bridge crossing probabilities. Discrete contracts observe B3 closes only.</p></div>
+      <form id="barrier-form" class="pricing-form" data-endpoint="/api/v1/barriers/price/">
+        {% csrf_token %}
+        <div class="card">
+          <h3>Contract</h3>
+          <div class="grid">
+            <label>Option type<select name="option_type"><option value="call">Call</option><option value="put">Put</option></select></label>
+            <label>Direction<select name="direction"><option value="up">Up</option><option value="down">Down</option></select></label>
+            <label>Behavior<select name="behavior"><option value="in">Knock-in</option><option value="out">Knock-out</option></select></label>
+            <label>OTM strike<select name="strike" class="strike-select" data-default-moneyness="0.10"></select><small>R$1 increments from loaded spot</small></label>
+            <label>Barrier level<select name="barrier" class="barrier-select" data-default-moneyness="0.25"></select><small>R$1 increments beyond spot</small></label>
+            <label>Barrier status<select name="barrier_status"><option value="not_triggered">Not triggered</option><option value="triggered">Already triggered</option><option value="not_applicable">Not applicable</option></select></label>
+            <label>Monitoring<select name="monitoring"><option value="continuous">Continuous — full path</option><option value="daily_close">Daily — every B3 close</option><option value="weekly">Weekly — last B3 close</option><option value="monthly">Monthly — last B3 close</option><option value="maturity_only">Maturity close only</option></select></label>
+            <label>Rebate per unit<input name="rebate" type="number" min="0" step="0.01" value="0"></label>
+            <label>Rebate timing<select name="rebate_timing"><option value="expiry">At expiry</option><option value="immediate">At knock-out</option></select></label>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Market &amp; model</h3>
+          <div class="grid">
+            <label>Spot<input name="spot" class="spot-input" type="number" min="0" step="0.01" value="100"></label>
+            <label>Valuation date<input name="valuation_date" class="valuation-input" type="date"></label>
+            <label>Expiration<input name="expiration_date" class="expiry-input" type="date"></label>
+            <label>DI rate<input name="rate" class="rate-input" type="number" step="0.0001" value="0.12"><small>Decimal: 0.12 = 12%</small></label>
+            <label>Dividend yield<input name="dividend_yield" class="dividend-input" type="number" step="0.0001" value="0.04"><small>Continuous decimal yield</small></label>
+            <label>Volatility<input name="volatility" class="vol-input" type="number" min="0" step="0.0001" value="0.25"><small>Decimal: 0.25 = 25%</small></label>
+            <label>Quantity<input name="quantity" type="number" min="0" step="1" value="1"></label>
+            <label>Multiplier<input name="multiplier" type="number" min="0" step="1" value="1"></label>
+            <label>Monte Carlo paths<input name="paths" type="number" min="5000" max="500000" step="5000" value="50000"></label>
+            <label>Random seed<input name="seed" type="number" value="42"></label>
+            <label class="check"><input name="calculate_greeks" type="checkbox"> Calculate bump-and-revalue Greeks</label>
+          </div>
+        </div>
+        <div class="form-errors" aria-live="polite"></div>
+        <button class="primary" type="submit">Run barrier study</button>
+      </form>
+      <div class="result-shell"><div class="empty-result">Run a study to see price, confidence, probabilities, parity and Greeks.</div></div>
+    </section>
+
+    <section class="workspace" id="collar">
+      <div class="workspace-heading"><div><p class="kicker">S + P − C<sub>UI</sub></p><h2>Collar Up-and-In</h2></div><p>More conditional upside freedom, but less call premium to finance protection.</p></div>
+      <div class="package-host" data-kind="collar"></div>
+    </section>
+    <section class="workspace" id="fence">
+      <div class="workspace-heading"><div><p class="kicker">S + P<sub>U</sub> − P<sub>L</sub> − C<sub>UI</sub></p><h2>Fence Up-and-In</h2></div><p>Protection exists between the put strikes; losses resume below the lower strike.</p></div>
+      <div class="package-host" data-kind="fence"></div>
+    </section>
+    <section class="workspace knockout-workspace" id="nitro">
+      <div class="workspace-heading"><div><p class="kicker">LONG C<sub>UO</sub>(K, H)</p><h2>Nitro — Call Up-and-Out</h2></div><p>Bullish exposure at a lower premium, provided the share does not touch the knock-out barrier before expiry.</p></div>
+      <div class="knockout-lesson"><strong>A touch is final.</strong><span>If the underlying reaches H at any monitored time, the Up-and-Out call is eliminated—even when it later closes below H.</span></div>
+      <div class="package-host" data-kind="nitro"></div>
+    </section>
+    <section class="workspace knockout-workspace" id="double_up_ko">
+      <div class="workspace-heading"><div><p class="kicker">S + C<sub>UO</sub>(K<sub>1</sub>, H) − qC(K<sub>2</sub>)</p><h2>Double Up KO</h2></div><p>Use the cheaper Up-and-Out call to fund leveraged upside—while recognising that a barrier touch can remove that leg.</p></div>
+      <div class="knockout-lesson"><strong>Being right is not sufficient.</strong><span>The stock can touch H, end below it, and still leave the Up-and-Out call with no value. The short vanilla call remains in force.</span></div>
+      <div class="package-host" data-kind="double_up_ko"></div>
+    </section>
+    <section class="workspace retail-workspace" id="retail">
+      <div class="workspace-heading"><div><p class="kicker">BRAZILIAN RETAIL-FLEX STUDIES</p><h2>Barrier yield, bullet &amp; KI.KO packages</h2></div><p>Choose a defined package. Every payoff shows the surviving and transformed path states separately—these are study conventions, not trade terms.</p></div>
+      <div class="retail-product-tabs" role="tablist" aria-label="Retail structures">
+        <button class="active" type="button" data-retail-product="box_ko">Box KO</button>
+        <button type="button" data-retail-product="box_bullet">Box Bullet</button>
+        <button type="button" data-retail-product="bullet">Bullet</button>
+        <button type="button" data-retail-product="bullet_plus">Bullet Plus</button>
+        <button type="button" data-retail-product="golden_bullet">Golden Bullet</button>
+        <button type="button" data-retail-product="collar_kiko">Collar KI.KO</button>
+        <button type="button" data-retail-product="fence_kiko">Fence KI.KO</button>
+        <button type="button" data-retail-product="call_kiko">Call KI.KO</button>
+        <button type="button" data-retail-product="digital">Digital Call / Put</button>
+        <button type="button" data-retail-product="call_spread">Call Spread</button>
+        <button type="button" data-retail-product="risk_reversal">Risk Reversal</button>
+        <button type="button" data-retail-product="seagull">Seagull</button>
+        <button type="button" data-retail-product="straddle">Straddle</button>
+        <button type="button" data-retail-product="strangle">Strangle</button>
+        <button type="button" data-retail-product="reverse_condor">Reverse Condor</button>
+        <button type="button" data-retail-product="double_up">Double Up</button>
+        <button type="button" data-retail-product="double_up_hedge">Double Up Hedge</button>
+        <button type="button" data-retail-product="seagull_ki">Seagull KI</button>
+        <button type="button" data-retail-product="jump">Jump · term sheet</button>
+      </div>
+      <div class="retail-product-panels">
+        <article class="retail-product-panel active" data-retail-panel="box_ko"><div class="retail-lesson"><strong>Box KO · S + P<sub>DO</sub>(K,B) − C<sub>DO</sub>(K,B)</strong><span>Lab convention: if the lower barrier survives, put–call parity fixes the terminal option package at K. A barrier touch removes both options and leaves the stock exposed.</span></div><div class="package-host" data-kind="box_ko"></div></article>
+        <article class="retail-product-panel" data-retail-panel="box_bullet"><div class="retail-lesson"><strong>Box Bullet · S + Digital Call(B) − C(B)</strong><span>The condition is checked at expiry only. An intraday drawdown that recovers above B does not eliminate the maturity condition.</span></div><div class="package-host" data-kind="box_bullet"></div></article>
+        <article class="retail-product-panel" data-retail-panel="bullet"><div class="retail-lesson"><strong>Bullet · Forward Down-and-Out</strong><span>Lab v1 representative convention. The package earns its fixed outcome only while the downside knock-out condition survives.</span></div><div class="package-host" data-kind="bullet"></div></article>
+        <article class="retail-product-panel" data-retail-panel="bullet_plus"><div class="retail-lesson"><strong>Bullet Plus · Forward Down-and-Out + C<sub>UO</sub></strong><span>Lab v1 representative convention. Moderate upside can add call participation; the upper touch removes that additional call leg.</span></div><div class="package-host" data-kind="bullet_plus"></div></article>
+        <article class="retail-product-panel" data-retail-panel="golden_bullet"><div class="retail-lesson"><strong>Golden Bullet · Forward Down-and-Out + P<sub>DO</sub></strong><span>Lab v1 representative convention. The extra put can help in a moderate decline, but is also lost after a downside barrier breach.</span></div><div class="package-host" data-kind="golden_bullet"></div></article>
+        <article class="retail-product-panel" data-retail-panel="collar_kiko"><div class="retail-lesson"><strong>Collar KI.KO · S + P(K<sub>P</sub>) + C<sub>UO</sub>(K<sub>1</sub>,H) − C<sub>UI</sub>(K<sub>2</sub>,H)</strong><span>Before H, the long UO call supplies leveraged upside and the UI call is inactive. A touch transforms the package into a vanilla collar.</span></div><div class="package-host" data-kind="collar_kiko"></div></article>
+        <article class="retail-product-panel" data-retail-panel="fence_kiko"><div class="retail-lesson"><strong>Fence KI.KO · Collar KI.KO with put spread</strong><span>The protective put is limited by the short lower put. After H, the UO/UI calls transform into their vanilla collar equivalents.</span></div><div class="package-host" data-kind="fence_kiko"></div></article>
+        <article class="retail-product-panel" data-retail-panel="call_kiko"><div class="retail-lesson"><strong>Call KI.KO · S + C<sub>UO</sub>(K<sub>1</sub>,H) − C<sub>UI</sub>(K<sub>2</sub>,H)</strong><span>Moderate appreciation gives enhanced participation. Once H is touched, the long call is out and the short call is in, capping upside without downside protection.</span></div><div class="package-host" data-kind="call_kiko"></div></article>
+        <article class="retail-product-panel" data-retail-panel="digital"><div class="retail-lesson"><strong>Digital Call / Put · Q·1{S<sub>T</sub> on the selected side of K}</strong><span>A standalone binary payoff. It is quoted in BRL, not portfolio bps; near strike at expiry its directional sensitivity is concentrated.</span></div><div class="package-host" data-kind="digital"></div></article>
+        <article class="retail-product-panel" data-retail-panel="call_spread"><div class="retail-lesson"><strong>Call Spread · C(K1) − C(K2)</strong><span>Bullish exposure with limited debit, limited loss, and capped upside.</span></div><div class="package-host" data-kind="call_spread"></div></article>
+        <article class="retail-product-panel" data-retail-panel="risk_reversal"><div class="retail-lesson"><strong>Risk Reversal · C(Kc) − P(Kp)</strong><span>The short put finances bullish call exposure and creates downside obligation below Kp.</span></div><div class="package-host" data-kind="risk_reversal"></div></article>
+        <article class="retail-product-panel" data-retail-panel="seagull"><div class="retail-lesson"><strong>Seagull · C(K2) − C(K3) − P(K1)</strong><span>A financed call spread: capped bullish participation with downside risk below K1.</span></div><div class="package-host" data-kind="seagull"></div></article>
+        <article class="retail-product-panel" data-retail-panel="straddle"><div class="retail-lesson"><strong>Long Straddle · C(K) + P(K)</strong><span>Long volatility at one strike: large moves help; time decay hurts.</span></div><div class="package-host" data-kind="straddle"></div></article>
+        <article class="retail-product-panel" data-retail-panel="strangle"><div class="retail-lesson"><strong>Long Strangle · P(Kp) + C(Kc)</strong><span>Cheaper than a straddle, but requires a larger move beyond two strikes.</span></div><div class="package-host" data-kind="strangle"></div></article>
+        <article class="retail-product-panel" data-retail-panel="reverse_condor"><div class="retail-lesson"><strong>Reverse Condor · long outer wings, short inner wings</strong><span>A capped long-movement trade with four ordered strikes.</span></div><div class="package-host" data-kind="reverse_condor"></div></article>
+        <article class="retail-product-panel" data-retail-panel="double_up"><div class="retail-lesson"><strong>Double Up · S + C(K1) − 2C(K2)</strong><span>Ordinary stock downside, accelerated participation between K1 and K2, then a capped terminal value.</span></div><div class="package-host" data-kind="double_up"></div></article>
+        <article class="retail-product-panel" data-retail-panel="double_up_hedge"><div class="retail-lesson"><strong>Double Up Hedge · S + P(Kp) + C(K1) − 2C(K2)</strong><span>The protective put adds a floor to the conventional Double Up package. This is the explicit lab convention; dealer terms can alter financing legs.</span></div><div class="package-host" data-kind="double_up_hedge"></div></article>
+        <article class="retail-product-panel" data-retail-panel="seagull_ki"><div class="retail-lesson"><strong>Seagull KI · C(K2) − C(K3) − P<sub>DI</sub>(K1,B)</strong><span>The downside obligation is dormant until the lower barrier activates the short Down-and-In put.</span></div><div class="package-host" data-kind="seagull_ki"></div></article>
+        <article class="retail-product-panel" data-retail-panel="jump"><div class="retail-lesson"><strong>Jump · term-sheet decomposition required</strong><span>The public marketing label promises leveraged bullish participation, some protection and no initial disbursement, but does not establish contractual legs.</span></div><section class="package-economics retail-economics"><div class="structure-total"><div><small>Do not manufacture a payoff</small><strong>Load the actual lâmina</strong></div><p><span>Enter every leg, strike, ratio, barrier, monitoring rule, rebate and premium before pricing.</span></p></div><div class="cash-flow-columns"><article><h4>Required evidence</h4><div class="cash-flow-item"><span>Leg inventory</span><strong>Long / short</strong><small>Option type, exercise style and quantity</small></div></article><article><h4>Path terms</h4><div class="cash-flow-item"><span>Barrier mechanics</span><strong>KI / KO</strong><small>Level, observation and post-event transformation</small></div></article><article><h4>Commercial terms</h4><div class="cash-flow-item"><span>Executable economics</span><strong>Premium / reserve</strong><small>Maximum loss and early-unwind convention</small></div></article></div></section></article>
+      </div>
+    </section>
+    <section class="workspace" id="solver">
+      <div class="workspace-heading"><div><p class="kicker">BRENT BRACKETING + COMMON RANDOM NUMBERS</p><h2>Zero-cost solver</h2></div><p>Zero cost means premium balance—not zero market, path, gap, liquidity, or downside risk.</p></div>
+      <div class="solver-host"></div>
+    </section>
+    <section class="workspace" id="scenario">
+      <div class="workspace-heading"><div><p class="kicker">TWO PATH STATES, ALWAYS</p><h2>Maturity payoff scenarios</h2></div><p>A terminal price alone cannot tell whether the barrier was touched.</p></div>
+      <div class="scenario-controls"><select id="scenario-kind"><option value="collar">Collar Up-and-In</option><option value="fence">Fence Up-and-In</option></select><button class="primary" id="run-scenarios">Generate scenarios</button></div>
+      <div id="scenario-snapshot" class="scenario-snapshot">
+        <div><small>Underlying security</small><strong>Price a structure first</strong></div>
+        <div><small>Underlying price used</small><strong>—</strong></div>
+        <div><small>Call strike</small><strong>—</strong></div>
+        <div><small>Activation barrier</small><strong>—</strong></div>
+        <div><small>Initial investment</small><strong>—</strong></div>
+      </div>
+      <div class="chart-lesson"><span class="lesson-number">01</span><div><strong>Read both charts together</strong><p>The terminal price is identical on both x-axes. Only the historical barrier state changes, determining whether the short Up-and-In call participates.</p></div></div>
+      <div class="chart-grid">
+        <article class="card chart-card"><div class="chart-card-heading"><div><p>PATH STATE A</p><h3>Barrier never triggered</h3></div><span class="state-badge free">Call inactive</span></div><div class="chart-canvas-wrap"><canvas id="chart-never"></canvas></div><p class="chart-caption">The investor keeps the underlying upside because the short call never activates.</p></article>
+        <article class="card chart-card"><div class="chart-card-heading"><div><p>PATH STATE B</p><h3>Barrier triggered</h3></div><span class="state-badge capped">Call active</span></div><div class="chart-canvas-wrap"><canvas id="chart-triggered"></canvas></div><p class="chart-caption">Once triggered, the short call changes payoff above its strike—even if the asset later moves below the barrier.</p></article>
+      </div>
+      <div id="scenario-outcomes" class="scenario-outcomes"></div>
+      <div class="education-panel"><article><span>Terminal price</span><p>The horizontal axis is the security price at expiration, not its percentage return.</p></article><article><span>Total P&amp;L</span><p>Includes the underlying, every option payoff, and the initial option-package premium.</p></article><article><span>Path dependency</span><p>The barrier line is a historical trigger level; it is not automatically a maturity payoff kink.</p></article></div>
+      <div class="scenario-error form-errors"></div>
+    </section>
+    <section class="workspace learning-workspace" id="learning">
+      <div class="workspace-heading"><div><p class="kicker">FROM MODEL VALUE TO TRADE REALITY</p><h2>Dealer &amp; Risk Lab</h2></div><p>Start from a saved valuation. Explore the risk-neutral paths behind it, the quote built around it, and the limits of a Greek explanation.</p></div>
+      <div class="learning-intro">
+        <div><span>Saved trade</span><strong>Choose a priced calculation</strong></div>
+        <label for="learning-calculation">Calculation<select id="learning-calculation"><option value="">Load saved calculations…</option></select></label>
+        <button class="secondary" type="button" id="refresh-learning">Refresh trades</button>
+      </div>
+      <div class="learning-subnav" role="tablist" aria-label="Dealer and risk tools">
+        <button class="active" type="button" data-learning-tool="paths"><span>01</span>Path explorer</button>
+        <button type="button" data-learning-tool="quote"><span>02</span>Dealer quote</button>
+        <button type="button" data-learning-tool="volatility"><span>03</span>Volatility lab</button>
+        <button type="button" data-learning-tool="hedge"><span>04</span>Hedge simulator</button>
+        <button type="button" data-learning-tool="attribution"><span>05</span>P&amp;L attribution</button>
+      </div>
+
+      <article class="learning-panel active" data-learning-panel="paths">
+        <div class="learning-panel-heading"><div><p>RISK-NEUTRAL PATHS</p><h3>Interactive path explorer</h3></div><p>These paths are pricing scenarios under the risk-neutral measure—not forecasts. Two paths can end at the same price and have different barrier outcomes.</p></div>
+        <div class="learning-controls"><label>Path<select id="learning-path-index"></select></label><label>Displayed simulations<input id="learning-path-count" type="number" value="8" min="1" max="20" step="1"></label><label>Seed<input id="learning-path-seed" type="number" value="42" step="1"></label><button class="primary" type="button" data-learning-run="paths">Explore path</button></div>
+        <div class="learning-insight" id="path-insight">Select a saved calculation to inspect a simulated path, its first barrier event and any Brownian-bridge crossing.</div>
+        <div class="learning-chart-card"><div class="chart-canvas-wrap"><canvas id="learning-path-chart"></canvas></div></div>
+        <div class="learning-metrics" id="path-metrics"></div>
+        <div class="learning-table-wrap"><table class="learning-table"><thead><tr><th>Observation</th><th>Date</th><th>Spot</th><th>Barrier state</th><th>Bridge</th></tr></thead><tbody id="path-table"></tbody></table></div>
+      </article>
+
+      <article class="learning-panel" data-learning-panel="quote">
+        <div class="learning-panel-heading"><div><p>COMMERCIAL QUOTE</p><h3>Dealer quote waterfall</h3></div><p>The clean model value is not automatically the client price. Reserves compensate model uncertainty, hedging frictions and liquidity; margin is a commercial decision.</p></div>
+        <div class="learning-controls quote-controls"><label>Dealer pricing volatility<input id="quote-pricing-volatility" type="number" value="0.25" min="0.0001" step="0.0001"></label><label>Model reserve (BRL)<input id="quote-model-reserve" type="number" value="0" step="0.01"></label><label>Hedging &amp; liquidity reserve (BRL)<input id="quote-hedging-liquidity" type="number" value="0" step="0.01"></label><label>Dealer margin (BRL)<input id="quote-margin" type="number" value="0" step="0.01"></label><label>Quote side<select id="quote-side"><option value="offer">Client offer / debit</option><option value="bid">Dealer bid / credit</option></select></label><button class="primary" type="button" data-learning-run="quote">Build quote</button></div>
+        <div class="learning-waterfall" id="quote-waterfall"></div>
+        <div class="learning-metrics" id="quote-metrics"></div>
+      </article>
+
+      <article class="learning-panel" data-learning-panel="volatility">
+        <div class="learning-panel-heading"><div><p>VOLATILITY IS A CHOICE</p><h3>Volatility laboratory</h3></div><p>Historical volatility describes realised movement; implied volatility is inferred from vanilla prices; dealer volatility is the assumption applied to this quoted risk. This v1 uses no skew or surface inference.</p></div>
+        <div class="learning-controls"><label>Historical volatility<input id="volatility-historical" type="number" value="0.20" min="0.0001" step="0.0001"><small>Descriptive only</small></label><label>Market / implied volatility<input id="volatility-implied" type="number" value="0.25" min="0.0001" step="0.0001"><small>Clean pricing reference</small></label><label>Dealer pricing volatility<input id="volatility-dealer" type="number" value="0.30" min="0.0001" step="0.0001"><small>Quote assumption</small></label><button class="primary" type="button" data-learning-run="volatility">Compare volatility</button></div>
+        <div class="learning-chart-card"><div class="chart-canvas-wrap"><canvas id="learning-volatility-chart"></canvas></div></div>
+        <div class="learning-table-wrap"><table class="learning-table"><thead><tr><th>Scenario</th><th>Historical</th><th>Vanilla implied</th><th>Dealer input</th><th>Structure value</th></tr></thead><tbody id="volatility-table"></tbody></table></div>
+      </article>
+
+      <article class="learning-panel" data-learning-panel="hedge">
+        <div class="learning-panel-heading"><div><p>DISCRETE HEDGING</p><h3>Illustrative delta hedge</h3></div><p>A delta hedge is an approximation, not a promise. Rebalancing frequency, transaction costs and a barrier event can create P&amp;L that a static Greek cannot explain.</p></div>
+        <div class="learning-controls"><label>Path<select id="hedge-path-index"></select></label><label>Rebalance points<input id="hedge-rebalance-count" type="number" value="24" min="2" max="60" step="1"></label><label>Transaction cost (bps)<input id="hedge-cost-bps" type="number" value="2" min="0" step="0.1"></label><button class="primary" type="button" data-learning-run="hedge">Simulate hedge</button></div>
+        <div class="learning-chart-card"><div class="chart-canvas-wrap"><canvas id="learning-hedge-chart"></canvas></div></div>
+        <div class="learning-metrics" id="hedge-metrics"></div>
+        <div class="learning-table-wrap"><table class="learning-table"><thead><tr><th>Date</th><th>Spot</th><th>Structure value</th><th>Delta</th><th>Hedge shares</th><th>Trade</th><th>Cumulative P&amp;L</th></tr></thead><tbody id="hedge-table"></tbody></table></div>
+      </article>
+
+      <article class="learning-panel" data-learning-panel="attribution">
+        <div class="learning-panel-heading"><div><p>EXPLAINING VALUE CHANGE</p><h3>P&amp;L attribution</h3></div><p>This is an ordered exact-repricing waterfall. Greek diagnostics are local approximations; the residual makes the reconciliation gap visible, especially around barrier-state changes.</p></div>
+        <div class="learning-controls"><label>Spot move (%)<input id="attribution-spot-pct" type="number" value="1" step="0.1"></label><label>Volatility shift<input id="attribution-vol-shift" type="number" value="0.01" step="0.001"></label><label>Rate shift<input id="attribution-rate-shift" type="number" value="0" step="0.0001"></label><label>Days elapsed<input id="attribution-days" type="number" value="1" min="0" step="1"></label><button class="primary" type="button" data-learning-run="attribution">Attribute P&amp;L</button></div>
+        <div class="learning-waterfall" id="attribution-waterfall"></div>
+        <div class="learning-metrics" id="attribution-metrics"></div>
+      </article>
+    </section>
+    <section class="workspace" id="history">
+      <div class="workspace-heading"><div><p class="kicker">REPRODUCIBLE LOCAL RECORD</p><h2>Previous calculations</h2></div><button class="secondary" id="refresh-history">Refresh</button></div>
+      <div id="history-list" class="history-list"></div>
+    </section>
+    <section class="workspace prose" id="methodology">
+      <p class="kicker">METHODOLOGY &amp; LIMITS</p>
+      <h2>From a vanilla option to a path-dependent structure</h2>
+      <p class="method-intro">The lab follows the same reasoning a structurer uses: establish the vanilla benchmark, add the barrier event, simulate paths, activate the contractual payoff, and finally combine signed legs into a package.</p>
+      <div class="method-journey">
+        <article><span>01</span><div><h3>Start with the vanilla benchmark</h3><p>Black–Scholes prices a European call or put from spot, strike, time, DI rate, dividend yield and volatility. Only the terminal price matters. This deterministic value is the control against which the barrier premium is compared.</p></div></article>
+        <article><span>02</span><div><h3>Add a path state</h3><p>A barrier adds direction, level, knock-in or knock-out behavior, monitoring rules and historical status. Two paths can finish at the same price but produce different payoffs because only one touched the barrier.</p></div></article>
+        <article><span>03</span><div><h3>Build the observation clock</h3><p>Continuous monitoring watches the full path. Daily, weekly and monthly contracts use B3 sessions; maturity-only observes once. Fewer observation opportunities generally reduce knock-in value and increase knock-out value.</p></div></article>
+        <article><span>04</span><div><h3>Simulate under risk neutrality</h3><p>GBM grows each path at DI minus dividend yield, with dispersion controlled by volatility. For continuous barriers, a Brownian bridge estimates crossings hidden between simulation points.</p></div></article>
+        <article><span>05</span><div><h3>Apply and discount the payoff</h3><p>The terminal vanilla intrinsic value is paid only when the barrier state makes the option active. Each path payoff is discounted, averaged and reported with a standard error and confidence interval.</p></div></article>
+        <article><span>06</span><div><h3>Challenge the result</h3><p>With no rebate, knock-in plus knock-out should recover the vanilla price. The parity residual is compared with Monte Carlo noise. Repeating a seed must reproduce the same result.</p></div></article>
+      </div>
+      <div class="comparison-table-wrap"><table class="comparison-table"><thead><tr><th>Question</th><th>Vanilla European</th><th>Barrier option</th></tr></thead><tbody><tr><td>What determines payoff?</td><td>Terminal price versus strike</td><td>Terminal price plus observed path state</td></tr><tr><td>Extra contract inputs</td><td>None beyond market and vanilla terms</td><td>Barrier, direction, in/out, monitoring, status and rebate</td></tr><tr><td>Primary engine here</td><td>Closed-form Black–Scholes</td><td>Monte Carlo GBM with Brownian bridge</td></tr><tr><td>Main diagnostic</td><td>Put–call relationships and benchmarks</td><td>In–out parity and Monte Carlo confidence</td></tr><tr><td>Can equal terminal prices differ?</td><td>No</td><td>Yes, if barrier histories differ</td></tr></tbody></table></div>
+      <h2 class="method-subtitle">Why each parameter matters</h2>
+      <div class="parameter-grid"><article><strong>Spot</strong><p>Sets current moneyness and distance to the barrier. Yahoo Finance can update only this field; verify its timestamp before use.</p></article><article><strong>Strike</strong><p>Controls terminal intrinsic value. For an Up-and-In call with H ≤ K, finishing in the money implies the barrier was crossed under continuous paths.</p></article><article><strong>Barrier</strong><p>Controls activation or extinction probability. Its effect is path-dependent, not merely a second strike.</p></article><article><strong>Volatility</strong><p>Widens path dispersion and usually increases crossing probability. Its effect on knock-outs can oppose ordinary vanilla intuition.</p></article><article><strong>DI rate</strong><p>Changes discounting and risk-neutral drift. It is an explicit manual assumption in this version; Yahoo does not supply the desk DI curve.</p></article><article><strong>Dividend yield</strong><p>Reduces forward equity growth under the model. It remains an explicit manual assumption and is not inferred from Yahoo.</p></article><article><strong>Monitoring</strong><p>Defines when a crossing legally counts. Continuous, daily-close and monthly contracts are economically different products.</p></article><article><strong>Barrier status</strong><p>Represents history explicitly. Current spot cannot prove that a barrier was never touched earlier.</p></article><article><strong>Paths and seed</strong><p>More paths reduce sampling error; the seed makes a study reproducible and stabilizes solver comparisons.</p></article></div>
+      <div class="structure-lessons"><article><h3>Collar Up-and-In</h3><p>The protective put costs premium; the short Up-and-In call finances it only conditionally. Because that call is normally cheaper than a vanilla call, retaining the same put often creates an initial debit.</p></article><article><h3>Fence Up-and-In</h3><p>The lower short put adds financing but reopens losses below its strike. The two payoff charts show why the short call can cap upside in one path state and disappear in the other.</p></article><article><h3>Nitro — Call Up-and-Out</h3><p>The client buys a cheaper bullish call because a monitored touch of H permanently eliminates it. Being right about direction is insufficient when the rally is strong enough to cross the barrier.</p></article><article><h3>Double Up KO</h3><p>This version is S + C<sub>UO</sub>(K<sub>1</sub>,H) − qC(K<sub>2</sub>). If H is touched, the leveraged long call disappears while the underlying and short vanilla call remain.</p></article><article><h3>Zero cost is not zero risk</h3><p>The solver balances initial option premiums within tolerance. It does not remove downside, barrier, volatility, liquidity, gap, counterparty or model risk.</p></article></div>
+      <div class="limitations"><h3>Model boundary</h3><p>Constant volatility, constant rate, continuous dividend yield, GBM and European exercise. No jumps, discrete dividends, corporate actions, local/stochastic volatility, credit or funding adjustment, hedging reserve, dealer margin, RFQ or trading.</p></div>
+    </section>
+  </main>
+  <footer>Barrier Options Lab · model version 1.0.0 · study use only</footer>
+</body>
+</html>
