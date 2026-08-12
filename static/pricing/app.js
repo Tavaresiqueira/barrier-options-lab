@@ -617,6 +617,13 @@ function greekValue(value) {
   return Number(value).toLocaleString("pt-BR", {minimumFractionDigits:4, maximumFractionDigits:4, signDisplay:"always"});
 }
 
+function deltaValue(value) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
+  const decimal = Number(value).toLocaleString("pt-BR", {minimumFractionDigits:4, maximumFractionDigits:4, signDisplay:"always"});
+  const marketDelta = Number(value * 100).toLocaleString("pt-BR", {minimumFractionDigits:1, maximumFractionDigits:1, signDisplay:"always"});
+  return `${decimal} · ${marketDelta}Δ`;
+}
+
 function structureBaseUnits(result) {
   if (typeof result.base_share_quantity === "number" && result.base_share_quantity > 0) return result.base_share_quantity;
   const standaloneUnits = result.option_quantity * result.contract_multiplier;
@@ -625,7 +632,7 @@ function structureBaseUnits(result) {
 }
 
 function greekUnitLabel(key) {
-  return ({delta:"per R$1 spot", gamma:"per R$1² spot", vega_per_1pct:"per 1 vol point", theta_per_calendar_day:"per day", rho_per_1bp:"per bp"})[key];
+  return ({delta:"unit option delta", gamma:"per R$1² spot", vega_per_1pct:"per 1 vol point", theta_per_calendar_day:"per day", rho_per_1bp:"per bp"})[key];
 }
 
 function renderStructureGreeks(result) {
@@ -651,9 +658,9 @@ function renderStructureGreeks(result) {
   const portfolioValue = result.portfolio_context?.portfolio_value;
   const scaledGreek = (value, scale) => scale === "unit" ? value / baseUnits : scale === "bps" ? value / portfolioValue * 10_000 : value;
   return `<section class="structure-greeks">
-    <header class="greek-heading"><div><small>FULL-PACKAGE SENSITIVITIES</small><h3>${comparison ? "Structure Greeks and vanilla comparison" : "Structure Greeks"}</h3><p>Each sensitivity is shown per base unit, for the complete position in BRL, and in portfolio bps when a portfolio value is available. Delta is per R$1 spot move; gamma per R$1²; vega per one volatility point; theta per day; and rho per bp.</p></div><div class="package-delta"><small>Delta per base unit</small><strong>${greekValue(scaledGreek(packageDelta, "unit"))}</strong><span>${greekUnitLabel("delta")} · ${quantity(baseUnits)} base units</span><div><b>Full position</b><em>${greekValue(packageDelta)} BRL / R$1</em></div>${portfolioValue ? `<div><b>Portfolio</b><em>${greekValue(scaledGreek(packageDelta, "bps"))} bps / R$1</em></div>` : ""}</div></header>
-    <div class="greek-total-cards">${names.map(([key, label]) => `<article><small>${label} · ${greekUnitLabel(key)}</small>${structures.map(([structureLabel, structure]) => `<div class="greek-scale-name"><b>${structureLabel}</b></div><div><span>Per base unit</span><strong>${greekValue(scaledGreek(structure.total[key], "unit"))}</strong></div><div><span>Full position BRL</span><strong>${greekValue(structure.total[key])}</strong></div>${portfolioValue ? `<div><span>Portfolio bps</span><strong>${greekValue(scaledGreek(structure.total[key], "bps"))}</strong></div>` : ""}`).join("")}</article>`).join("")}</div>
-    ${rows.length ? `<div class="greek-composition-wrap"><table class="greek-composition"><thead><tr><th>Full-position package</th><th>Signed leg</th><th>Units</th>${names.map(([, label]) => `<th>${label} total</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr><td>${row.structure}</td><td>${row.label}</td><td>${quantity(row.signed_quantity)}</td>${names.map(([key]) => `<td>${greekValue(row.contribution?.[key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : ""}
+    <header class="greek-heading"><div><small>FULL-PACKAGE SENSITIVITIES</small><h3>${comparison ? "Structure Greeks and vanilla comparison" : "Structure Greeks"}</h3><p>Delta is dimensionless: option value change divided by spot change. A put displayed as −0.2500 is a −25Δ put. Other Greeks remain monetary sensitivities for the stated volatility, time and rate bumps.</p></div><div class="package-delta"><small>Package delta per base unit</small><strong>${deltaValue(scaledGreek(packageDelta, "unit"))}</strong><span>Dimensionless · normalized across ${quantity(baseUnits)} base units</span><div><b>Full position delta</b><em>${greekValue(packageDelta)} equivalent underlying units</em></div></div></header>
+    <div class="greek-total-cards">${names.map(([key, label]) => `<article><small>${label} · ${greekUnitLabel(key)}</small>${structures.map(([structureLabel, structure]) => `<div class="greek-scale-name"><b>${structureLabel}</b></div>${key === "delta" ? `<div><span>Per base unit</span><strong>${deltaValue(scaledGreek(structure.total.delta, "unit"))}</strong></div><div><span>Position delta</span><strong>${greekValue(structure.total.delta)} units</strong></div>` : `<div><span>Per base unit</span><strong>${greekValue(scaledGreek(structure.total[key], "unit"))}</strong></div><div><span>Full position BRL</span><strong>${greekValue(structure.total[key])}</strong></div>${portfolioValue ? `<div><span>Portfolio bps</span><strong>${greekValue(scaledGreek(structure.total[key], "bps"))}</strong></div>` : ""}`}`).join("")}</article>`).join("")}</div>
+    ${rows.length ? `<div class="greek-composition-wrap"><table class="greek-composition"><thead><tr><th>Package</th><th>Signed leg</th><th>Units</th><th>Signed unit delta</th><th>Position delta</th>${names.slice(1).map(([, label]) => `<th>${label} total</th>`).join("")}</tr></thead><tbody>${rows.map(row => `<tr><td>${row.structure}</td><td>${row.label}</td><td>${quantity(row.signed_quantity)}</td><td>${deltaValue(row.unit_greeks?.delta * Math.sign(row.signed_quantity))}</td><td>${greekValue(row.contribution?.delta)}</td>${names.slice(1).map(([key]) => `<td>${greekValue(row.contribution?.[key])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>` : ""}
     ${composition.conventions?.method ? `<p class="greek-method">${composition.conventions.method}${typeof bumps.spot === "number" ? ` Bumps: R$ ${money(bumps.spot)} spot, ${(bumps.volatility * 100).toFixed(0)} vol point, ${(bumps.rate * 10000).toFixed(0)} bp rate, and ${bumps.theta_days} calendar day.` : ""}</p>` : ""}
   </section>`;
 }
@@ -738,10 +745,11 @@ function renderSpotSnapshot(host, result) {
   const structure = result.structure_greeks?.barrier_structure || result.structure_greeks?.package_structure || result.structure_greeks?.structure;
   const total = structure?.total || {};
   const legs = structure?.legs || [];
-  const greekColumns = [["delta","Delta","per R$1"],["gamma","Gamma","per R$1²"],["vega_per_1pct","Vega","per 1 vol pt"],["theta_per_calendar_day","Theta","per day"],["rho_per_1bp","Rho","per bp"]];
+  const baseUnits = structureBaseUnits(result);
+  const greekColumns = [["delta","Delta","per base unit"],["gamma","Gamma","position total"],["vega_per_1pct","Vega","per 1 vol pt"],["theta_per_calendar_day","Theta","per day"],["rho_per_1bp","Rho","per bp"]];
   host.innerHTML = `<div class="spot-snapshot-head"><div><span>Package mark at selected spot</span><small>${result.net_option_cost >= 0 ? "Client debit" : "Client credit"}</small></div><strong>R$ ${money(Math.abs(result.net_option_cost))}</strong></div>
-    <div class="spot-greek-totals">${greekColumns.map(([key,label,unit])=>`<article><span>${label}</span><strong>${greekValue(total[key])}</strong><small>${unit}</small></article>`).join("")}</div>
-    ${legs.length ? `<div class="spot-leg-greeks"><div class="spot-leg-header"><span>Signed leg contribution</span>${greekColumns.map(([,label])=>`<span>${label}</span>`).join("")}</div>${legs.map(leg=>`<div class="spot-leg-row"><strong>${leg.label}<small>${quantity(leg.signed_quantity)} units</small></strong><span>${greekValue(leg.contribution?.delta)}</span><span>${greekValue(leg.contribution?.gamma)}</span><span>${greekValue(leg.contribution?.vega_per_1pct)}</span><span>${greekValue(leg.contribution?.theta_per_calendar_day)}</span><span>${greekValue(leg.contribution?.rho_per_1bp)}</span></div>`).join("")}</div>` : ""}`;
+    <div class="spot-greek-totals">${greekColumns.map(([key,label,unit])=>`<article><span>${label}</span><strong>${key === "delta" ? deltaValue(total.delta / baseUnits) : greekValue(total[key])}</strong><small>${unit}</small></article>`).join("")}</div>
+    ${legs.length ? `<div class="spot-leg-greeks"><div class="spot-leg-header"><span>Signed leg</span><span>Signed unit delta</span><span>Gamma total</span><span>Vega total</span><span>Theta total</span><span>Rho total</span></div>${legs.map(leg=>`<div class="spot-leg-row"><strong>${leg.label}<small>${quantity(leg.signed_quantity)} units</small></strong><span>${deltaValue(leg.unit_greeks?.delta * Math.sign(leg.signed_quantity))}</span><span>${greekValue(leg.contribution?.gamma)}</span><span>${greekValue(leg.contribution?.vega_per_1pct)}</span><span>${greekValue(leg.contribution?.theta_per_calendar_day)}</span><span>${greekValue(leg.contribution?.rho_per_1bp)}</span></div>`).join("")}</div>` : ""}`;
 }
 
 function attachSpotExplorer(target, result) {
