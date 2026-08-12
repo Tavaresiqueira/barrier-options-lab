@@ -738,9 +738,10 @@ function renderSpotSnapshot(host, result) {
   const structure = result.structure_greeks?.barrier_structure || result.structure_greeks?.package_structure || result.structure_greeks?.structure;
   const total = structure?.total || {};
   const legs = structure?.legs || [];
-  host.innerHTML = `<div class="spot-snapshot-head"><span>Package premium</span><strong>R$ ${money(result.net_option_cost)}</strong></div>
-    <div class="spot-greek-totals">${[["delta","Δ"],["gamma","Γ"],["vega_per_1pct","Vega"],["theta_per_calendar_day","Theta"],["rho_per_1bp","Rho"]].map(([key,label])=>`<span><b>${label}</b>${greekValue(total[key])}</span>`).join("")}</div>
-    ${legs.length ? `<div class="spot-leg-greeks">${legs.map(leg=>`<div><strong>${leg.label}</strong><span>Δ ${greekValue(leg.contribution?.delta)}</span><span>Γ ${greekValue(leg.contribution?.gamma)}</span><span>V ${greekValue(leg.contribution?.vega_per_1pct)}</span><span>Θ ${greekValue(leg.contribution?.theta_per_calendar_day)}</span><span>ρ ${greekValue(leg.contribution?.rho_per_1bp)}</span></div>`).join("")}</div>` : ""}`;
+  const greekColumns = [["delta","Delta","per R$1"],["gamma","Gamma","per R$1²"],["vega_per_1pct","Vega","per 1 vol pt"],["theta_per_calendar_day","Theta","per day"],["rho_per_1bp","Rho","per bp"]];
+  host.innerHTML = `<div class="spot-snapshot-head"><div><span>Package mark at selected spot</span><small>${result.net_option_cost >= 0 ? "Client debit" : "Client credit"}</small></div><strong>R$ ${money(Math.abs(result.net_option_cost))}</strong></div>
+    <div class="spot-greek-totals">${greekColumns.map(([key,label,unit])=>`<article><span>${label}</span><strong>${greekValue(total[key])}</strong><small>${unit}</small></article>`).join("")}</div>
+    ${legs.length ? `<div class="spot-leg-greeks"><div class="spot-leg-header"><span>Signed leg contribution</span>${greekColumns.map(([,label])=>`<span>${label}</span>`).join("")}</div>${legs.map(leg=>`<div class="spot-leg-row"><strong>${leg.label}<small>${quantity(leg.signed_quantity)} units</small></strong><span>${greekValue(leg.contribution?.delta)}</span><span>${greekValue(leg.contribution?.gamma)}</span><span>${greekValue(leg.contribution?.vega_per_1pct)}</span><span>${greekValue(leg.contribution?.theta_per_calendar_day)}</span><span>${greekValue(leg.contribution?.rho_per_1bp)}</span></div>`).join("")}</div>` : ""}`;
 }
 
 function attachSpotExplorer(target, result) {
