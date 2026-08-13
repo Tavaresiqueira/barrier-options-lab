@@ -55,6 +55,10 @@ class ApiTests(TestCase):
         self.assertEqual(result["scenario_analysis"]["curve_type"], "valuation_date_mark_to_market")
         self.assertGreater(result["scenario_analysis"]["days_to_expiry"], 0)
         self.assertIn("vanilla_unit_value", result["scenario_analysis"]["states"]["pre_barrier"][0])
+        self.assertEqual(set(result["scenario_analysis"]["expiry_states"]), {"barrier_not_triggered", "barrier_triggered"})
+        expiry_row = result["scenario_analysis"]["expiry_states"]["barrier_triggered"][0]
+        self.assertIn("exotic_payoff_per_unit", expiry_row)
+        self.assertIn("vanilla_payoff_per_unit", expiry_row)
         self.assertEqual(result["contract_snapshot"]["spot"], 100)
         self.assertIn("greeks", result)
         self.assertIn("vanilla_greeks", result)

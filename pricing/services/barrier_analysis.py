@@ -39,6 +39,25 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
                 "total_pnl_since_trade": total_value - initial,
             })
         states[label] = rows
+    expiry_spots = np.linspace(low, high, points_per_branch * 2)
+    vanilla_expiry = np.maximum(expiry_spots - contract.strike, 0) if contract.option_type == "call" else np.maximum(contract.strike - expiry_spots, 0)
+    expiry_states = {}
+    for label, barrier_status in (("barrier_not_triggered", "not_triggered"), ("barrier_triggered", "triggered")):
+        active = (barrier_status == "triggered") if contract.behavior == "in" else (barrier_status == "not_triggered")
+        exotic_payoff = vanilla_expiry if active else np.full_like(expiry_spots, contract.rebate)
+        rows = []
+        for index, spot in enumerate(expiry_spots):
+            state_possible = True
+            if barrier_status == "not_triggered":
+                state_possible = spot < contract.barrier if contract.direction == "up" else spot > contract.barrier
+            rows.append({
+                "terminal_price": float(spot), "barrier_state": barrier_status, "state_possible": bool(state_possible),
+                "exotic_payoff_per_unit": float(exotic_payoff[index]),
+                "exotic_pnl_per_unit": float(exotic_payoff[index] - priced["premium_per_unit"]),
+                "vanilla_payoff_per_unit": float(vanilla_expiry[index]),
+                "vanilla_pnl_per_unit": float(vanilla_expiry[index] - priced["vanilla_equivalent_price"]),
+            })
+        expiry_states[label] = rows
     return {
         "chart_unit": "BRL", "curve_type": "valuation_date_mark_to_market",
         "scenario_range": [low, high], "states": states, "initial_premium": initial,
@@ -46,6 +65,7 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
         "expiration_date": contract.expiration_date.isoformat(),
         "days_to_expiry": (contract.expiration_date - contract.valuation_date).days,
         "barrier": contract.barrier, "paths_used": curve_contract.paths,
+        "expiry_states": expiry_states,
         "initial_exotic_premium_per_unit": priced["premium_per_unit"],
         "initial_vanilla_premium_per_unit": priced["vanilla_equivalent_price"],
         "initial_premium_discount_per_unit": priced["vanilla_equivalent_price"] - priced["premium_per_unit"],
