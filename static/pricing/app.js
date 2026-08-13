@@ -104,7 +104,7 @@ function extremaMarkerDatasets(groups, valueLabel) {
       .map(([kind, point]) => ({
         label: `${group.label} ${kind}`, data: [point], showLine: false, pointRadius: 5.5, pointHoverRadius: 7,
         pointBackgroundColor: "#fff", pointBorderColor: group.color, pointBorderWidth: 3, borderColor: group.color,
-        extremaMarker: true, extremaKind: kind, extremaLabel: `${group.label} ${kind === "max" ? `max ${valueLabel}` : `min ${valueLabel}`}`
+        extremaMarker: true, markerGroup: group.key, extremaKind: kind, extremaLabel: `${group.label} ${kind === "max" ? `max ${valueLabel}` : `min ${valueLabel}`}`
       }));
   });
 }
@@ -117,7 +117,7 @@ function deltaSignFlipDatasets(signFlips) {
       label: `Delta inversion ${index + 1}`, data: [{x:flip.spot,y:flip.unit_model_value,pnl:null}], showLine:false,
       pointRadius:7, pointHoverRadius:9, pointStyle:"rectRot", pointBackgroundColor:"#fff", pointBorderColor:"#d97706",
       pointBorderWidth:3, borderColor:"#d97706", extremaMarker:true, extremaKind:positiveToNegative ? "max" : "min",
-      extremaLabel:`${direction} at spot R$ ${money(flip.spot)}`
+      markerGroup:"exotic", extremaLabel:`${direction} at spot R$ ${money(flip.spot)}`
     };
   });
 }
@@ -808,7 +808,7 @@ function singleBarrierLearningMarkup(result) {
   const contract = result.contract_snapshot, scenario = result.scenario_analysis;
   return `<section class="embedded-scenarios single-barrier-learning">
     <div class="embedded-scenario-heading"><div><small>VALUATION-DATE BARRIER LAB</small><h3>Option value today across spot</h3><p>This is a mark-to-market curve with ${scenario.days_to_expiry} calendar days remaining—not an expiry payoff. Each point is repriced with the original volatility, rates, monitoring and maturity.</p></div><div class="quantity-pills"><span><b>${scenario.days_to_expiry}</b>days to expiry</span><span><b>${quantity(contract.quantity * contract.multiplier)}</b>option units</span><span><b>${contract.behavior.toUpperCase()}</b>${contract.direction} barrier</span></div></div>
-    <article class="embedded-chart-card"><header><span>VALUATION ${scenario.valuation_date} · EXPIRY ${scenario.expiration_date}</span><strong data-single-chart-title>Current exotic versus vanilla value per option unit</strong><small data-single-chart-subtitle>${contract.option_type.toUpperCase()} · K R$ ${money(contract.strike)} · barrier R$ ${money(contract.barrier)} · ${scenario.paths_used.toLocaleString("pt-BR")} paths per exotic point.</small><div class="curve-time-switch" data-curve-time-switch><button type="button" class="active" data-curve-time="today">Today · ${scenario.days_to_expiry}d left</button><button type="button" data-curve-time="expiry">Expiration payoff</button></div></header><div class="embedded-canvas"><canvas data-single-barrier-chart></canvas></div><div class="vanilla-comparison-strip"><div><span>Barrier-option premium</span><strong>R$ ${money(scenario.initial_exotic_premium_per_unit)}</strong></div><div><span>Same vanilla ${contract.option_type}</span><strong>R$ ${money(scenario.initial_vanilla_premium_per_unit)}</strong></div><div class="premium-gap"><span>Premium discount from barrier</span><strong>R$ ${money(scenario.initial_premium_discount_per_unit)}</strong><small>${(scenario.initial_premium_discount_per_unit/scenario.initial_vanilla_premium_per_unit*100).toFixed(1)}% below vanilla</small></div></div>${singleBarrierSpotMarkup(result)}${singleBarrierEquivalenceMarkup()}<p data-single-chart-note>The purple vanilla line has no barrier event. The green exotic branch stops before the trigger and the dashed red post-trigger branch begins at the barrier. Orange diamonds mark interpolated spots where the exotic curve's local delta changes sign.</p></article>
+    <article class="embedded-chart-card"><header><span>VALUATION ${scenario.valuation_date} · EXPIRY ${scenario.expiration_date}</span><strong data-single-chart-title>Current exotic and vanilla value per option unit</strong><small data-single-chart-subtitle>${contract.option_type.toUpperCase()} · K R$ ${money(contract.strike)} · barrier R$ ${money(contract.barrier)} · ${scenario.paths_used.toLocaleString("pt-BR")} paths per exotic point.</small><div class="curve-time-switch" data-curve-time-switch><button type="button" class="active" data-curve-time="today">Today · ${scenario.days_to_expiry}d left</button><button type="button" data-curve-time="expiry">Expiration payoff</button></div></header><div class="single-barrier-chart-grid"><section><div><strong>Barrier option</strong><small>Path-dependent value and delta inversions</small></div><div class="embedded-canvas"><canvas data-single-barrier-chart="exotic"></canvas></div></section><section><div><strong>Equivalent vanilla</strong><small>Independent scale for a clean benchmark</small></div><div class="embedded-canvas"><canvas data-single-barrier-chart="vanilla"></canvas></div></section></div><div class="vanilla-comparison-strip"><div><span>Barrier-option premium</span><strong>R$ ${money(scenario.initial_exotic_premium_per_unit)}</strong></div><div><span>Same vanilla ${contract.option_type}</span><strong>R$ ${money(scenario.initial_vanilla_premium_per_unit)}</strong></div><div class="premium-gap"><span>Premium discount from barrier</span><strong>R$ ${money(scenario.initial_premium_discount_per_unit)}</strong><small>${(scenario.initial_premium_discount_per_unit/scenario.initial_vanilla_premium_per_unit*100).toFixed(1)}% below vanilla</small></div></div>${singleBarrierSpotMarkup(result)}${singleBarrierEquivalenceMarkup()}<p data-single-chart-note>The plots share the same spot range but use independent value scales. Orange diamonds mark interpolated spots where the exotic curve's local delta changes sign. Hiding a line also hides its extrema and inversion markers.</p></article>
   </section>`;
 }
 
@@ -828,18 +828,19 @@ function renderSingleBarrierSnapshot(host, result) {
 }
 
 function drawSingleBarrierLearning(target, result) {
-  const canvas = $("[data-single-barrier-chart]", target), scenario = result.scenario_analysis;
-  if (!canvas || !scenario) return;
+  const exoticCanvas = $("[data-single-barrier-chart='exotic']", target), vanillaCanvas = $("[data-single-barrier-chart='vanilla']", target), scenario = result.scenario_analysis;
+  if (!exoticCanvas || !vanillaCanvas || !scenario) return;
   const ordered = [["pre_barrier",scenario.states.pre_barrier],["post_trigger",scenario.states.post_trigger]];
-  const datasets = ordered.map(([name,rows],index)=>({label:index ? "Exotic · post-trigger" : "Exotic · pre-barrier",data:rows.map(row=>({x:row.spot,y:row.unit_model_value,pnl:row.total_pnl_since_trade})),borderColor:index?"#a53838":"#126142",backgroundColor:index?"rgba(165,56,56,.07)":"rgba(18,97,66,.07)",borderDash:index?[8,5]:[],borderWidth:3,pointRadius:0,tension:.14,spanGaps:false}));
+  const datasets = ordered.map(([name,rows],index)=>({label:index ? "Exotic · post-trigger" : "Exotic · pre-barrier",curveGroup:"exotic",data:rows.map(row=>({x:row.spot,y:row.unit_model_value,pnl:row.total_pnl_since_trade})),borderColor:index?"#a53838":"#126142",backgroundColor:index?"rgba(165,56,56,.07)":"rgba(18,97,66,.07)",borderDash:index?[8,5]:[],borderWidth:3,pointRadius:0,tension:.14,spanGaps:false}));
   const vanillaRows = [...scenario.states.pre_barrier,...scenario.states.post_trigger].sort((a,b)=>a.spot-b.spot);
-  datasets.push({label:`Vanilla ${result.contract_snapshot.option_type}`,data:vanillaRows.map(row=>({x:row.spot,y:row.vanilla_unit_value,pnl:null})),borderColor:"#6f42c1",borderDash:[3,3],borderWidth:2.4,pointRadius:0,tension:.14});
-  const todayDatasets = [...datasets, ...extremaMarkerDatasets([
-    {label:"Exotic",color:"#126142",points:datasets.slice(0,2).flatMap(dataset=>dataset.data)},
-    {label:"Vanilla",color:"#6f42c1",points:datasets[2].data}
-  ], "price"), ...deltaSignFlipDatasets(scenario.delta_sign_flips)];
-  state.charts.singleBarrier?.destroy();
-  state.charts.singleBarrier = new Chart(canvas,{type:"line",data:{datasets:todayDatasets},options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"nearest",intersect:false},plugins:{legend:{position:"bottom",labels:{usePointStyle:true,pointStyle:"line",filter:(item,data)=>!data.datasets[item.datasetIndex]?.extremaMarker}},referenceLines:{items:[{label:"Current spot",value:result.contract_snapshot.spot,color:"#68736e"},{label:"Strike",value:result.contract_snapshot.strike,color:"#b36b23",offset:12},{label:"Barrier event",value:result.contract_snapshot.barrier,color:"#8d4da8",offset:24}]},tooltip:{callbacks:{title:items=>`Spot today: R$ ${money(items[0].parsed.x)}`,label:item=>`${item.dataset.label}: R$ ${money(item.parsed.y)} / unit`,afterLabel:item=>item.raw.pnl==null?"No barrier condition":`P&L since trade: R$ ${money(item.raw.pnl)}`}}},scales:{x:{type:"linear",title:{display:true,text:"Hypothetical underlying spot today (BRL)"},ticks:{callback:value=>`R$ ${Number(value).toFixed(0)}`}},y:{title:{display:true,text:"Current option model value per unit (BRL)"},ticks:{callback:value=>`R$ ${Number(value).toFixed(2)}`}}}}});
+  datasets.push({label:`Vanilla ${result.contract_snapshot.option_type}`,curveGroup:"vanilla",data:vanillaRows.map(row=>({x:row.spot,y:row.vanilla_unit_value,pnl:null})),borderColor:"#6f42c1",borderDash:[3,3],borderWidth:2.4,pointRadius:0,tension:.14});
+  const todayExotic = [...datasets.slice(0,2), ...extremaMarkerDatasets([{key:"exotic",label:"Exotic",color:"#126142",points:datasets.slice(0,2).flatMap(dataset=>dataset.data)}], "price"), ...deltaSignFlipDatasets(scenario.delta_sign_flips)];
+  const todayVanilla = [datasets[2], ...extremaMarkerDatasets([{key:"vanilla",label:"Vanilla",color:"#6f42c1",points:datasets[2].data}], "price")];
+  const groupedLegendClick = (_event,item,legend)=>{const chart=legend.chart,group=chart.data.datasets[item.datasetIndex].curveGroup;if(!group)return;const visible=chart.isDatasetVisible(item.datasetIndex);chart.data.datasets.forEach((dataset,index)=>{if(dataset.curveGroup===group||dataset.markerGroup===group)chart.setDatasetVisibility(index,!visible);});chart.update();};
+  const chartOptions = yTitle => ({responsive:true,maintainAspectRatio:false,interaction:{mode:"nearest",intersect:false},plugins:{legend:{position:"bottom",onClick:groupedLegendClick,labels:{usePointStyle:true,pointStyle:"line",filter:(item,data)=>!data.datasets[item.datasetIndex]?.extremaMarker}},referenceLines:{items:[{label:"Current spot",value:result.contract_snapshot.spot,color:"#68736e"},{label:"Strike",value:result.contract_snapshot.strike,color:"#b36b23",offset:12},{label:"Barrier event",value:result.contract_snapshot.barrier,color:"#8d4da8",offset:24}]},tooltip:{callbacks:{title:items=>`Spot today: R$ ${money(items[0].parsed.x)}`,label:item=>`${item.dataset.label}: R$ ${money(item.parsed.y)} / unit`,afterLabel:item=>item.raw.pnl==null?"":`P&L since trade: R$ ${money(item.raw.pnl)}`}}},scales:{x:{type:"linear",title:{display:true,text:"Hypothetical underlying spot today (BRL)"},ticks:{callback:value=>`R$ ${Number(value).toFixed(0)}`}},y:{title:{display:true,text:yTitle},ticks:{callback:value=>`R$ ${Number(value).toFixed(2)}`}}}});
+  state.charts.singleBarrierExotic?.destroy(); state.charts.singleBarrierVanilla?.destroy();
+  state.charts.singleBarrierExotic = new Chart(exoticCanvas,{type:"line",data:{datasets:todayExotic},options:chartOptions("Barrier option value per unit (BRL)")});
+  state.charts.singleBarrierVanilla = new Chart(vanillaCanvas,{type:"line",data:{datasets:todayVanilla},options:chartOptions("Vanilla option value per unit (BRL)")});
   const timeSwitch=$("[data-curve-time-switch]",target),title=$("[data-single-chart-title]",target),subtitle=$("[data-single-chart-subtitle]",target),note=$("[data-single-chart-note]",target);
   timeSwitch.onclick=event=>{
     const button=event.target.closest("button[data-curve-time]"); if(!button)return;
@@ -848,30 +849,27 @@ function drawSingleBarrierLearning(target, result) {
     if(expiry){
       const expiryStates=scenario.expiry_states;
       const expiryDatasets=[
-        {label:"Exotic · barrier not triggered",data:expiryStates.barrier_not_triggered.filter(row=>row.state_possible).map(row=>({x:row.terminal_price,y:row.exotic_payoff_per_unit,pnl:row.exotic_pnl_per_unit})),borderColor:"#126142",borderWidth:3,pointRadius:0,tension:0},
-        {label:"Exotic · barrier triggered",data:expiryStates.barrier_triggered.map(row=>({x:row.terminal_price,y:row.exotic_payoff_per_unit,pnl:row.exotic_pnl_per_unit})),borderColor:"#a53838",borderDash:[8,5],borderWidth:3,pointRadius:0,tension:0},
-        {label:`Vanilla ${result.contract_snapshot.option_type} payoff`,data:expiryStates.barrier_triggered.map(row=>({x:row.terminal_price,y:row.vanilla_payoff_per_unit,pnl:row.vanilla_pnl_per_unit})),borderColor:"#6f42c1",borderDash:[3,3],borderWidth:2.4,pointRadius:0,tension:0}
+        {label:"Exotic · barrier not triggered",curveGroup:"exotic",data:expiryStates.barrier_not_triggered.filter(row=>row.state_possible).map(row=>({x:row.terminal_price,y:row.exotic_payoff_per_unit,pnl:row.exotic_pnl_per_unit})),borderColor:"#126142",borderWidth:3,pointRadius:0,tension:0},
+        {label:"Exotic · barrier triggered",curveGroup:"exotic",data:expiryStates.barrier_triggered.map(row=>({x:row.terminal_price,y:row.exotic_payoff_per_unit,pnl:row.exotic_pnl_per_unit})),borderColor:"#a53838",borderDash:[8,5],borderWidth:3,pointRadius:0,tension:0},
+        {label:`Vanilla ${result.contract_snapshot.option_type} payoff`,curveGroup:"vanilla",data:expiryStates.barrier_triggered.map(row=>({x:row.terminal_price,y:row.vanilla_payoff_per_unit,pnl:row.vanilla_pnl_per_unit})),borderColor:"#6f42c1",borderDash:[3,3],borderWidth:2.4,pointRadius:0,tension:0}
       ];
-      state.charts.singleBarrier.data.datasets=[...expiryDatasets,...extremaMarkerDatasets([
-        {label:"Exotic",color:"#126142",points:expiryDatasets.slice(0,2).flatMap(dataset=>dataset.data)},
-        {label:"Vanilla",color:"#6f42c1",points:expiryDatasets[2].data}
-      ],"payoff")];
+      state.charts.singleBarrierExotic.data.datasets=[...expiryDatasets.slice(0,2),...extremaMarkerDatasets([{key:"exotic",label:"Exotic",color:"#126142",points:expiryDatasets.slice(0,2).flatMap(dataset=>dataset.data)}],"payoff")];
+      state.charts.singleBarrierVanilla.data.datasets=[expiryDatasets[2],...extremaMarkerDatasets([{key:"vanilla",label:"Vanilla",color:"#6f42c1",points:expiryDatasets[2].data}],"payoff")];
       title.textContent="Expiration payoff per option unit";
       subtitle.textContent=`Terminal payoff on ${scenario.expiration_date}; tooltip P&L subtracts the initial exotic or vanilla premium.`;
       note.textContent="At expiration there is no time value. The not-triggered curve is clipped where that state is impossible at the final barrier observation; the triggered curve remains valid after paths that touched and later recovered.";
-      state.charts.singleBarrier.options.scales.x.title.text="Terminal underlying price (BRL)";
-      state.charts.singleBarrier.options.scales.y.title.text="Expiration payoff per unit (BRL)";
-      state.charts.singleBarrier.options.plugins.tooltip.callbacks.title=items=>`Terminal spot: R$ ${money(items[0].parsed.x)}`;
+      [state.charts.singleBarrierExotic,state.charts.singleBarrierVanilla].forEach(chart=>{chart.options.scales.x.title.text="Terminal underlying price (BRL)";chart.options.scales.y.title.text="Expiration payoff per unit (BRL)";chart.options.plugins.tooltip.callbacks.title=items=>`Terminal spot: R$ ${money(items[0].parsed.x)}`;});
     }else{
-      state.charts.singleBarrier.data.datasets=todayDatasets;
-      title.textContent="Current exotic versus vanilla value per option unit";
+      state.charts.singleBarrierExotic.data.datasets=todayExotic;
+      state.charts.singleBarrierVanilla.data.datasets=todayVanilla;
+      title.textContent="Current exotic and vanilla value per option unit";
       subtitle.textContent=`${result.contract_snapshot.option_type.toUpperCase()} · K R$ ${money(result.contract_snapshot.strike)} · barrier R$ ${money(result.contract_snapshot.barrier)} · ${scenario.paths_used.toLocaleString("pt-BR")} paths per exotic point.`;
-      note.textContent="The purple vanilla line has no barrier event. The green exotic branch stops before the trigger and the dashed red post-trigger branch begins at the barrier. Orange diamonds mark interpolated spots where the exotic curve's local delta changes sign.";
-      state.charts.singleBarrier.options.scales.x.title.text="Hypothetical underlying spot today (BRL)";
-      state.charts.singleBarrier.options.scales.y.title.text="Current option model value per unit (BRL)";
-      state.charts.singleBarrier.options.plugins.tooltip.callbacks.title=items=>`Spot today: R$ ${money(items[0].parsed.x)}`;
+      note.textContent="The plots share the same spot range but use independent value scales. Orange diamonds mark interpolated spots where the exotic curve's local delta changes sign. Hiding a line also hides its extrema and inversion markers.";
+      [state.charts.singleBarrierExotic,state.charts.singleBarrierVanilla].forEach(chart=>{chart.options.scales.x.title.text="Hypothetical underlying spot today (BRL)";chart.options.plugins.tooltip.callbacks.title=items=>`Spot today: R$ ${money(items[0].parsed.x)}`;});
+      state.charts.singleBarrierExotic.options.scales.y.title.text="Barrier option value per unit (BRL)";
+      state.charts.singleBarrierVanilla.options.scales.y.title.text="Vanilla option value per unit (BRL)";
     }
-    state.charts.singleBarrier.update();
+    state.charts.singleBarrierExotic.update(); state.charts.singleBarrierVanilla.update();
   };
 }
 
