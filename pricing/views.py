@@ -7,7 +7,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 
 from .models import Calculation
 from .services.market_data import MarketDataError, option_chain, option_quotes
-from .services.barrier_analysis import single_barrier_monitoring_equivalence, single_barrier_payoff
+from .services.barrier_analysis import single_barrier_mark_curve, single_barrier_monitoring_equivalence
 from .services.monitoring import monitoring_equivalence
 from .services.learning import dealer_quote, hedge_simulator, path_explorer, pnl_attribution, volatility_lab
 from .services.monte_carlo import MonteCarloBarrierEngine
@@ -52,9 +52,11 @@ def price_barrier(request):
     try:
         data = _payload(request)
         contract = parse_contract(data)
-        result = MonteCarloBarrierEngine().price(contract)
+        engine = MonteCarloBarrierEngine()
+        result = engine.price(contract)
+        result["vanilla_greeks"] = engine.vanilla_greeks(contract)
         result["contract_snapshot"] = contract.as_dict()
-        result["scenario_analysis"] = single_barrier_payoff(contract, result)
+        result["scenario_analysis"] = single_barrier_mark_curve(contract, result)
         calculation = _save("barrier", data, result)
         result["calculation_id"] = calculation.id
         return JsonResponse({"data": result}, status=201)
@@ -67,7 +69,9 @@ def barrier_snapshot(request):
     """Reprice one barrier option at an exploratory spot without persistence."""
     try:
         contract = parse_contract(_payload(request))
-        result = MonteCarloBarrierEngine().price(contract, include_greeks=True)
+        engine = MonteCarloBarrierEngine()
+        result = engine.price(contract, include_greeks=True)
+        result["vanilla_greeks"] = engine.vanilla_greeks(contract)
         result["contract_snapshot"] = contract.as_dict()
         return JsonResponse({"data": result})
     except InputError as exc:

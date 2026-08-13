@@ -51,15 +51,20 @@ class ApiTests(TestCase):
         response = self.client.post(reverse("pricing:price_barrier"), payload(calculate_greeks=True), content_type="application/json")
         result = response.json()["data"]
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(set(result["scenario_analysis"]["states"]), {"barrier_triggered", "barrier_not_triggered"})
+        self.assertEqual(set(result["scenario_analysis"]["states"]), {"pre_barrier", "post_trigger"})
+        self.assertEqual(result["scenario_analysis"]["curve_type"], "valuation_date_mark_to_market")
+        self.assertGreater(result["scenario_analysis"]["days_to_expiry"], 0)
+        self.assertIn("vanilla_unit_value", result["scenario_analysis"]["states"]["pre_barrier"][0])
         self.assertEqual(result["contract_snapshot"]["spot"], 100)
         self.assertIn("greeks", result)
+        self.assertIn("vanilla_greeks", result)
 
     def test_barrier_snapshot_reprices_without_persistence(self):
         before = Calculation.objects.count()
         response = self.client.post(reverse("pricing:barrier_snapshot"), payload(spot=105, calculate_greeks=True), content_type="application/json")
         self.assertEqual(response.status_code, 200)
         self.assertIn("greeks", response.json()["data"])
+        self.assertIn("vanilla_greeks", response.json()["data"])
         self.assertEqual(Calculation.objects.count(), before)
 
     def test_field_validation_error(self):
