@@ -47,6 +47,21 @@ class ApiTests(TestCase):
         second = self.client.post(reverse("pricing:price_barrier"), payload(), content_type="application/json").json()["data"]
         self.assertEqual(first["model_price"], second["model_price"])
 
+    def test_single_barrier_response_includes_learning_payoff_states(self):
+        response = self.client.post(reverse("pricing:price_barrier"), payload(calculate_greeks=True), content_type="application/json")
+        result = response.json()["data"]
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(set(result["scenario_analysis"]["states"]), {"barrier_triggered", "barrier_not_triggered"})
+        self.assertEqual(result["contract_snapshot"]["spot"], 100)
+        self.assertIn("greeks", result)
+
+    def test_barrier_snapshot_reprices_without_persistence(self):
+        before = Calculation.objects.count()
+        response = self.client.post(reverse("pricing:barrier_snapshot"), payload(spot=105, calculate_greeks=True), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("greeks", response.json()["data"])
+        self.assertEqual(Calculation.objects.count(), before)
+
     def test_field_validation_error(self):
         response = self.client.post(reverse("pricing:price_barrier"), payload(volatility=0), content_type="application/json")
         self.assertEqual(response.status_code, 400)

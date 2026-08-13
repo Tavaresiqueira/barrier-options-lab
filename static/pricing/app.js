@@ -1,7 +1,7 @@
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const csrf = () => $('[name=csrfmiddlewaretoken]')?.value || "";
-const state = { market: null, packages: {}, charts: {} };
+const state = { market: null, packages: {}, barrier: null, charts: {} };
 Chart.defaults.font.family = "Poppins, sans-serif";
 Chart.defaults.color = "#68736e";
 
@@ -752,6 +752,48 @@ function renderSpotSnapshot(host, result) {
     ${legs.length ? `<div class="spot-leg-greeks"><div class="spot-leg-header"><span>Signed leg</span><span>Signed unit delta</span><span>Gamma total</span><span>Vega total</span><span>Theta total</span><span>Rho total</span></div>${legs.map(leg=>`<div class="spot-leg-row"><strong>${leg.label}<small>${quantity(leg.signed_quantity)} units</small></strong><span>${deltaValue(leg.unit_greeks?.delta * Math.sign(leg.signed_quantity))}</span><span>${greekValue(leg.contribution?.gamma)}</span><span>${greekValue(leg.contribution?.vega_per_1pct)}</span><span>${greekValue(leg.contribution?.theta_per_calendar_day)}</span><span>${greekValue(leg.contribution?.rho_per_1bp)}</span></div>`).join("")}</div>` : ""}`;
 }
 
+function singleBarrierLearningMarkup(result) {
+  const contract = result.contract_snapshot, scenario = result.scenario_analysis;
+  return `<section class="embedded-scenarios single-barrier-learning">
+    <div class="embedded-scenario-heading"><div><small>SINGLE-OPTION PAYOFF LAB</small><h3>Payoff by barrier history</h3><p>The same terminal price can produce different cash flows depending on whether the barrier was observed. Premium is paid today; payoff is measured at expiry.</p></div><div class="quantity-pills"><span><b>${quantity(contract.quantity * contract.multiplier)}</b>option units</span><span><b>${contract.behavior.toUpperCase()}</b>${contract.direction} barrier</span></div></div>
+    <article class="embedded-chart-card"><header><span>${contract.option_type.toUpperCase()} · K R$ ${money(contract.strike)} · H/B R$ ${money(contract.barrier)}</span><strong>Option payoff and net P&amp;L in BRL</strong><small>Solid and dashed curves separate the two historical barrier states.</small></header><div class="leg-toggle-panel" data-leg-toggles></div><div class="embedded-canvas"><canvas data-single-barrier-chart></canvas></div>${singleBarrierSpotMarkup(result)}${singleBarrierEquivalenceMarkup()}<p>The slider reprices the option today. The chart remains an expiry payoff diagram and includes the initial premium in P&amp;L.</p></article>
+  </section>`;
+}
+
+function singleBarrierSpotMarkup(result) {
+  const [low, high] = result.scenario_analysis.scenario_range, spot = result.contract_snapshot.spot;
+  return `<section class="spot-explorer" data-barrier-spot-explorer><div class="spot-slider-copy"><small>LIVE OPTION REPRICE</small><strong>Spot <output data-spot-output>R$ ${money(spot)}</output></strong><span>Move spot to recalculate the unit premium and Greeks with all other contract terms fixed.</span></div><input data-spot-slider type="range" min="${low}" max="${high}" value="${spot}" step="${Math.max((high-low)/200,.01)}"><div class="spot-snapshot" data-spot-snapshot></div></section>`;
+}
+
+function singleBarrierEquivalenceMarkup() {
+  return `<section class="monitoring-equivalence" data-barrier-equivalence><div><small>MONITORING EQUIVALENCE</small><strong>Discrete clock ↔ continuous barrier</strong><span>Find the more distant continuously monitored barrier that matches the discrete option premium.</span></div><label>Discrete observations<select data-discrete-monitoring><option value="daily_close">Daily close</option><option value="weekly">Weekly</option><option value="monthly" selected>Monthly</option><option value="maturity_only">Maturity only</option></select></label><button type="button" class="secondary" data-run-equivalence>Solve matching barrier</button><div class="equivalence-result" data-equivalence-result><span>Run the comparison for this option.</span></div></section>`;
+}
+
+function renderSingleBarrierSnapshot(host, result) {
+  const greeks = result.greeks || {}, delta = greeks.delta;
+  host.innerHTML = `<div class="spot-snapshot-head"><div><span>Premium per option unit</span><small>${result.simulation?.monitoring?.replaceAll("_"," ") || "selected monitoring"}</small></div><strong>R$ ${money(result.premium_per_unit)}</strong></div><div class="spot-greek-totals"><article><span>Delta</span><strong>${deltaValue(delta)}</strong><small>unit option delta</small></article>${[["gamma","Gamma","per R$1²"],["vega_per_1pct","Vega","per 1 vol pt"],["theta_per_calendar_day","Theta","per day"],["rho_per_1bp","Rho","per bp"]].map(([key,label,unit])=>`<article><span>${label}</span><strong>${greekValue(greeks[key])}</strong><small>${unit} · per option unit</small></article>`).join("")}</div>`;
+}
+
+function drawSingleBarrierLearning(target, result) {
+  const canvas = $("[data-single-barrier-chart]", target), scenario = result.scenario_analysis;
+  if (!canvas || !scenario) return;
+  const included = new Set(["option_intrinsic","rebate"]), colors = ["#126142","#a53838"];
+  const entries = Object.entries(scenario.states);
+  const value = row => row.total_pnl - Object.entries(row.leg_payoffs).reduce((sum,[leg,payoff])=>sum+(included.has(leg)?0:payoff),0);
+  const datasets = entries.map(([name,rows],index)=>({label:name.replaceAll("_"," "),sourceRows:rows,data:rows.map(row=>({x:row.terminal_price,y:value(row)})),borderColor:colors[index],borderDash:index?[6,3]:[],borderWidth:2.5,pointRadius:0,tension:.08}));
+  state.charts.singleBarrier?.destroy();
+  state.charts.singleBarrier = new Chart(canvas,{type:"line",data:{datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:"bottom"},referenceLines:{items:[{label:"Spot",value:result.contract_snapshot.spot,color:"#68736e"},{label:"Strike",value:result.contract_snapshot.strike,color:"#b36b23",offset:12},{label:"Barrier",value:result.contract_snapshot.barrier,color:"#8d4da8",offset:24}]},tooltip:{callbacks:{title:items=>`Terminal spot: R$ ${money(items[0].parsed.x)}`,label:item=>`${item.dataset.label}: R$ ${money(item.parsed.y)}`}}},scales:{x:{type:"linear",title:{display:true,text:"Terminal underlying price (BRL)"}},y:{title:{display:true,text:"Net option P&L (BRL)"}}}}});
+  const toggles=$("[data-leg-toggles]",target); toggles.innerHTML=`<span>Included payoff</span>${["option_intrinsic","rebate"].map(leg=>`<button type="button" class="active" data-leg="${leg}">${leg.replaceAll("_"," ")}</button>`).join("")}`;
+  toggles.onclick=event=>{const button=event.target.closest("button[data-leg]");if(!button)return;included.has(button.dataset.leg)?included.delete(button.dataset.leg):included.add(button.dataset.leg);button.classList.toggle("active",included.has(button.dataset.leg));datasets.forEach(dataset=>dataset.data=dataset.sourceRows.map(row=>({x:row.terminal_price,y:value(row)})));state.charts.singleBarrier.update();};
+}
+
+function attachSingleBarrierLearning(target, result) {
+  const saved=state.barrier, explorer=$("[data-barrier-spot-explorer]",target); if(!saved||!explorer)return;
+  const slider=$("[data-spot-slider]",explorer), output=$("[data-spot-output]",explorer), snapshot=$("[data-spot-snapshot]",explorer); let timer,sequence=0; renderSingleBarrierSnapshot(snapshot,result);
+  slider.oninput=()=>{const spot=Number(slider.value);output.textContent=`R$ ${money(spot)}`;clearTimeout(timer);timer=setTimeout(async()=>{const id=++sequence,payload={...saved.payload,spot,calculate_greeks:true};if((payload.direction==="up"&&spot>=payload.barrier)||(payload.direction==="down"&&spot<=payload.barrier))payload.barrier_status="triggered";snapshot.classList.add("loading");try{const repriced=await postJSON("/api/v1/barriers/snapshot/",payload);if(id===sequence)renderSingleBarrierSnapshot(snapshot,repriced);}catch(error){if(id===sequence)snapshot.innerHTML=`<span class="error">${errorText(error)}</span>`;}finally{snapshot.classList.remove("loading");}},260);};
+  const lab=$("[data-barrier-equivalence]",target),button=$("[data-run-equivalence]",lab),equivalence=$("[data-equivalence-result]",lab);button.onclick=async()=>{button.disabled=true;button.textContent="Solving…";try{const comparison=await postJSON("/api/v1/barriers/monitoring-equivalence/",{...saved.payload,discrete_monitoring:$("[data-discrete-monitoring]",lab).value});equivalence.innerHTML=`<div><span>Continuous · original barrier</span><strong>R$ ${money(comparison.continuous_price_at_original_barrier)}</strong></div><div><span>${comparison.discrete_monitoring.replaceAll("_"," ")} · original barrier</span><strong>R$ ${money(comparison.discrete_price_at_original_barrier)}</strong></div><div class="equivalent-level"><span>Matching continuous barrier</span><strong>R$ ${money(comparison.equivalent_continuous_barrier)}</strong><em>${comparison.barrier_shift_brl>=0?"+":""}${comparison.barrier_shift_brl.toFixed(2)} BRL · ${Math.abs(comparison.barrier_shift_pct_of_spot).toFixed(2)}% of spot</em></div><div><span>Matching residual</span><strong>R$ ${money(comparison.matching_residual)}</strong></div>`;}catch(error){equivalence.innerHTML=`<span class="error">${errorText(error)}</span>`;}finally{button.disabled=false;button.textContent="Solve matching barrier";}};
+}
+
 function attachSpotExplorer(target, result) {
   const explorer = $("[data-spot-explorer]", target);
   const saved = state.packages[result.kind];
@@ -922,7 +964,7 @@ function renderResult(target, result) {
   const packageKeys = new Set(["net_option_cost","protective_put_premium","long_put_premium","short_put_premium","up_in_call_premium","equivalent_vanilla_call_premium","vanilla_barrier_premium_difference"]);
   const entries = preferred.filter(key => key in result && !(result.kind && packageKeys.has(key))).map(key => [key, result[key]]);
   const warnings = result.warnings || [];
-  target.innerHTML = `${result.kind ? renderPackageEconomics(result) + renderStructureGreeks(result) + structureScenarioMarkup(result) : ""}<div class="metrics">${entries.map(([key,value]) => {
+  target.innerHTML = `${result.kind ? renderPackageEconomics(result) + renderStructureGreeks(result) + structureScenarioMarkup(result) : result.scenario_analysis ? singleBarrierLearningMarkup(result) : ""}<div class="metrics">${entries.map(([key,value]) => {
     const view = metricPresentation(key, value);
     return `<div class="metric ${view.tone}"><small>${view.label}</small><strong>${money(view.value)}</strong>${view.note ? `<em>${view.note}</em>` : ""}</div>`;
   }).join("")}</div>
@@ -931,6 +973,7 @@ function renderResult(target, result) {
   if (result.kind) drawStructureScenarioCharts(target, result);
   if (result.kind) attachSpotExplorer(target, result);
   if (result.kind) attachMonitoringEquivalence(target, result);
+  if (!result.kind && result.scenario_analysis) { drawSingleBarrierLearning(target,result); attachSingleBarrierLearning(target,result); }
   $(".copy-result", target).onclick = () => navigator.clipboard.writeText(JSON.stringify(result, null, 2));
   $(".export-result", target).onclick = () => {
     const link = document.createElement("a");
@@ -946,7 +989,9 @@ $("#barrier-form").addEventListener("submit", async event => {
   const form = event.currentTarget, button = $('button[type="submit"]', form), errors = $(".form-errors", form);
   errors.textContent = ""; button.disabled = true; button.textContent = "Simulating paths…";
   try {
-    const result = await postJSON(form.dataset.endpoint, normalizeContract(formObject(form)));
+    const payload = {...normalizeContract(formObject(form)), calculate_greeks:true};
+    const result = await postJSON(form.dataset.endpoint, payload);
+    state.barrier = {payload,result};
     renderResult($("#barrier .result-shell"), result);
   } catch (error) { errors.textContent = errorText(error); }
   finally { button.disabled = false; button.textContent = "Run barrier study"; }
