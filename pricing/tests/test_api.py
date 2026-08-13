@@ -55,6 +55,8 @@ class ApiTests(TestCase):
         self.assertEqual(result["scenario_analysis"]["curve_type"], "valuation_date_mark_to_market")
         self.assertGreater(result["scenario_analysis"]["days_to_expiry"], 0)
         self.assertIn("vanilla_unit_value", result["scenario_analysis"]["states"]["pre_barrier"][0])
+        self.assertIn("local_delta", result["scenario_analysis"]["states"]["pre_barrier"][0])
+        self.assertIn("delta_sign_flips", result["scenario_analysis"])
         self.assertEqual(set(result["scenario_analysis"]["expiry_states"]), {"barrier_not_triggered", "barrier_triggered"})
         expiry_row = result["scenario_analysis"]["expiry_states"]["barrier_triggered"][0]
         self.assertIn("exotic_payoff_per_unit", expiry_row)
@@ -70,6 +72,18 @@ class ApiTests(TestCase):
         self.assertIn("greeks", response.json()["data"])
         self.assertIn("vanilla_greeks", response.json()["data"])
         self.assertEqual(Calculation.objects.count(), before)
+
+    def test_up_and_out_curve_reports_delta_sign_inversion(self):
+        response = self.client.post(reverse("pricing:price_barrier"), payload(
+            behavior="out", spot=41.13, strike=45, barrier=51,
+            valuation_date="2026-08-12", expiration_date="2027-08-02",
+            rate=.12, dividend_yield=.04, monitoring="daily_close", paths=50000, seed=42,
+        ), content_type="application/json")
+        flips = response.json()["data"]["scenario_analysis"]["delta_sign_flips"]
+        self.assertTrue(flips)
+        self.assertEqual(flips[0]["direction"], "positive_to_negative")
+        self.assertGreater(flips[0]["delta_before"], 0)
+        self.assertLess(flips[0]["delta_after"], 0)
 
     def test_field_validation_error(self):
         response = self.client.post(reverse("pricing:price_barrier"), payload(volatility=0), content_type="application/json")

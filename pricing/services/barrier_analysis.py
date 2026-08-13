@@ -26,6 +26,7 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
     engine = MonteCarloBarrierEngine()
     curve_contract = contract.changed(paths=min(contract.paths, 8_000), calculate_greeks=False)
     states = {}
+    delta_sign_flips = []
     for label, (spots, barrier_status) in branches.items():
         rows = []
         for spot in spots:
@@ -37,6 +38,25 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
                 "unit_model_value": unit_value, "total_model_value": total_value,
                 "vanilla_unit_value": vanilla_value, "unit_premium_difference": vanilla_value - unit_value,
                 "total_pnl_since_trade": total_value - initial,
+            })
+        local_deltas = np.gradient([row["unit_model_value"] for row in rows], spots)
+        for row, delta in zip(rows, local_deltas):
+            row["local_delta"] = float(delta)
+        for index in range(1, len(rows)):
+            left_delta, right_delta = local_deltas[index - 1], local_deltas[index]
+            if left_delta * right_delta >= 0 or abs(left_delta - right_delta) < 1e-8:
+                continue
+            zero_weight = abs(left_delta) / (abs(left_delta) + abs(right_delta))
+            zero_spot = spots[index - 1] + zero_weight * (spots[index] - spots[index - 1])
+            zero_value = rows[index - 1]["unit_model_value"] + zero_weight * (rows[index]["unit_model_value"] - rows[index - 1]["unit_model_value"])
+            delta_sign_flips.append({
+                "branch": label,
+                "barrier_state": barrier_status,
+                "spot": float(zero_spot),
+                "unit_model_value": float(zero_value),
+                "direction": "positive_to_negative" if left_delta > 0 else "negative_to_positive",
+                "delta_before": float(left_delta),
+                "delta_after": float(right_delta),
             })
         states[label] = rows
     expiry_spots = np.linspace(low, high, points_per_branch * 2)
@@ -65,6 +85,7 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
         "expiration_date": contract.expiration_date.isoformat(),
         "days_to_expiry": (contract.expiration_date - contract.valuation_date).days,
         "barrier": contract.barrier, "paths_used": curve_contract.paths,
+        "delta_sign_flips": delta_sign_flips,
         "expiry_states": expiry_states,
         "initial_exotic_premium_per_unit": priced["premium_per_unit"],
         "initial_vanilla_premium_per_unit": priced["vanilla_equivalent_price"],
