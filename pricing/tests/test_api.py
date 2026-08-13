@@ -56,6 +56,8 @@ class ApiTests(TestCase):
         self.assertGreater(result["scenario_analysis"]["days_to_expiry"], 0)
         self.assertIn("vanilla_unit_value", result["scenario_analysis"]["states"]["pre_barrier"][0])
         self.assertIn("local_delta", result["scenario_analysis"]["states"]["pre_barrier"][0])
+        self.assertIn("local_gamma", result["scenario_analysis"]["states"]["pre_barrier"][0])
+        self.assertIn("vanilla_local_gamma", result["scenario_analysis"]["states"]["pre_barrier"][0])
         self.assertIn("delta_sign_flips", result["scenario_analysis"])
         self.assertEqual(set(result["scenario_analysis"]["expiry_states"]), {"barrier_not_triggered", "barrier_triggered"})
         expiry_row = result["scenario_analysis"]["expiry_states"]["barrier_triggered"][0]

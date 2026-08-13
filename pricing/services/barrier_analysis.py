@@ -40,8 +40,13 @@ def single_barrier_mark_curve(contract, priced, points_per_branch=25):
                 "total_pnl_since_trade": total_value - initial,
             })
         local_deltas = np.gradient([row["unit_model_value"] for row in rows], spots)
-        for row, delta in zip(rows, local_deltas):
+        local_gammas = np.gradient(local_deltas, spots)
+        vanilla_deltas = np.gradient([row["vanilla_unit_value"] for row in rows], spots)
+        vanilla_gammas = np.gradient(vanilla_deltas, spots)
+        for row, delta, gamma, vanilla_gamma in zip(rows, local_deltas, local_gammas, vanilla_gammas):
             row["local_delta"] = float(delta)
+            row["local_gamma"] = float(gamma)
+            row["vanilla_local_gamma"] = float(vanilla_gamma)
         for index in range(1, len(rows)):
             left_delta, right_delta = local_deltas[index - 1], local_deltas[index]
             if left_delta * right_delta >= 0 or abs(left_delta - right_delta) < 1e-8:
