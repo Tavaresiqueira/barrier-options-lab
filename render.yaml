@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: barrier-options-lab
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true

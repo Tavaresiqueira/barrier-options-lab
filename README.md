@@ -21,6 +21,12 @@ Run all tests:
 docker compose run --rm web python manage.py test
 ```
 
+## Deploy on Render
+
+The repository includes a `render.yaml` Blueprint and a production Gunicorn/WhiteNoise configuration. Connect the repository as a new Blueprint in Render; the service builds from `Dockerfile`, generates its Django secret, runs migrations, and deploys at an `onrender.com` URL.
+
+The default deployment uses SQLite inside the web-service container. Pricing and analytics are fully functional, but saved calculation history resets when Render replaces the container. Attach PostgreSQL before relying on persistent shared history.
+
 ## Architecture
 
 - `pricing/services/vanilla.py`: European Black–Scholes.
