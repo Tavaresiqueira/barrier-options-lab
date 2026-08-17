@@ -8,7 +8,7 @@ from pricing.services.domain import BarrierContract
 from pricing.services.monte_carlo import MonteCarloBarrierEngine
 from pricing.services.monitoring import monitoring_equivalence
 from pricing.services.structures import maturity_scenarios, price_structure
-from pricing.services.validation import InputError
+from pricing.services.validation import InputError, parse_contract
 from pricing.services.vanilla import black_scholes, black_scholes_cash_digital
 
 
@@ -44,6 +44,13 @@ class VanillaTests(SimpleTestCase):
 
 class BarrierTests(SimpleTestCase):
     engine = MonteCarloBarrierEngine()
+
+    @patch.dict("os.environ", {"MAX_MONTE_CARLO_PATHS": "12000"})
+    def test_deployment_path_limit_is_configurable(self):
+        payload = contract(paths=20_000).as_dict()
+        with self.assertRaises(InputError) as error:
+            parse_contract(payload)
+        self.assertIn("12,000", error.exception.errors["paths"][0])
 
     @patch("pricing.services.monitoring.price_structure")
     def test_monitoring_equivalence_moves_up_barrier_farther(self, mocked_price):

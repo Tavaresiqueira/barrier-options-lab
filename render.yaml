@@ -9,3 +9,5 @@ services:
         value: "false"
       - key: DJANGO_SECRET_KEY
         generateValue: true
+      - key: MAX_MONTE_CARLO_PATHS
+        value: "12000"

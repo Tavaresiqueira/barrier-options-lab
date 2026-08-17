@@ -1,3 +1,4 @@
+import os
 from datetime import date
 
 from .domain import BarrierContract
@@ -77,8 +78,9 @@ def parse_contract(data) -> BarrierContract:
         errors["multiplier"] = ["Must be positive."]
     if values["rebate"] < 0:
         errors["rebate"] = ["Must not be negative."]
-    if not 5_000 <= values["paths"] <= 500_000:
-        errors["paths"] = ["Must be between 5,000 and 500,000."]
+    maximum_paths = int(os.getenv("MAX_MONTE_CARLO_PATHS", "500000"))
+    if not 5_000 <= values["paths"] <= maximum_paths:
+        errors["paths"] = [f"This deployment supports between 5,000 and {maximum_paths:,} paths per request."]
     if values["expiration_date"] <= values["valuation_date"]:
         errors["expiration_date"] = ["Must be after valuation_date."]
     if values["direction"] == "up" and values["barrier"] <= values["spot"] and values["barrier_status"] == "not_triggered":

@@ -517,10 +517,28 @@ function normalizePackageContract(data, kind) {
 
 async function postJSON(url, payload) {
   const response = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json", "X-CSRFToken": csrf()}, body: JSON.stringify(payload)});
-  const body = await response.json();
-  if (!response.ok) throw body.error || {message: `HTTP ${response.status}`};
+  const rawBody = await response.text();
+  let body = null;
+  if (rawBody) {
+    try { body = JSON.parse(rawBody); }
+    catch (_error) { throw {message: `The server returned HTTP ${response.status} with an invalid response. Try fewer Monte Carlo paths.`}; }
+  }
+  if (!response.ok) throw body?.error || {message: `The server returned HTTP ${response.status} without a response. Try fewer Monte Carlo paths.`};
+  if (!body) throw {message: "The server returned an empty response. Try fewer Monte Carlo paths."};
   return body.data;
 }
+
+function configureHostedMonteCarloLimit() {
+  if (!location.hostname.endsWith(".onrender.com")) return;
+  const maximumPaths = 12_000;
+  $$('.workspace input[name="paths"]').forEach(input => {
+    input.max = maximumPaths;
+    if (Number(input.value) > maximumPaths) input.value = 10_000;
+    input.title = "The public Render service supports up to 12,000 paths per request. Localhost remains unrestricted up to 500,000.";
+  });
+}
+
+configureHostedMonteCarloLimit();
 
 function errorText(error) {
   if (error.fields) return Object.entries(error.fields).map(([field, messages]) => `${field}: ${messages.join(" ")}`).join("\n");
